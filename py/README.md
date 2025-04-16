@@ -24,17 +24,3 @@ echo "email body" | uv run https://raw.githubusercontent.com/garyj/tools/refs/he
     -u USER \
     -pw PASSWORD
 ```
-
-## webmirror.py
-
-Download a JavaScript-heavy site (SPA) for offline browsing, with all internal links rewritten for use over `file://`.
-
-```bash
-# Crawl example.com and cdn.other-example.com, saving files to the default output directory
-uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/webmirror.py \
-    --domain example.com --domain cdn.other-example.com
-
-# Specify a custom output directory
-uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/webmirror.py \
-    --domain example.com --domain cdn.other-example.com \
-    --output my-archive-dir
