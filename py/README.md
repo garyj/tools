@@ -2,6 +2,36 @@
 
 These scripts can be run on their own or using `uv run`. Scripts should use inline metadata [PEP 723](https://peps.python.org/pep-0723/)
 
+## images2pdf.py
+
+Convert JPEG/JPG images to PDF with 4 images per page arranged in a 2x2 grid, with filename captions. Useful if you need to present photos at VCAT 🤦‍♂️
+
+```bash
+# Process current directory
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/images2pdf.py
+
+# Specify output file
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/images2pdf.py \
+    -o photo_album.pdf
+
+# Specify image directory
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/images2pdf.py \
+    -d /path/to/images -o output.pdf
+
+# Custom page size and margins
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/images2pdf.py \
+    --page-size letter --margin 1.0 --spacing 0.5
+```
+
+**Key Features:**
+
+- Processes images alphabetically with 4 per page in 2x2 grid
+- Maintains aspect ratios while fitting images to page
+- Supports multiple JPEG formats (.jpg/.jpeg in any case)
+- Configurable page sizes (letter/A4), margins, and spacing
+- Progress bar and filename captions for each image
+- Automatic RGB conversion for RGBA/palette images
+
 ## mail.py
 
 Simple script that can replace the linux `mail` command to send emails. Useful in shell scripts on servers where it's not practical to install postfix/sendmail.
