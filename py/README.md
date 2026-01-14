@@ -2,6 +2,34 @@
 
 These scripts can be run on their own or using `uv run`. Scripts should use inline metadata [PEP 723](https://peps.python.org/pep-0723/)
 
+## genimg.py
+
+Generate images from text prompts using Google Gemini's image generation model.
+
+```bash
+# Set your API key
+export GOOGLE_API_KEY="your-api-key"
+
+# Basic usage
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/genimg.py \
+    "A cat wearing a tiny hat"
+
+# Custom output file
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/genimg.py \
+    "A sunset over mountains" -o sunset.png
+
+# Specify aspect ratio (1:1, 3:4, 4:3, 9:16, 16:9)
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/genimg.py \
+    "A wide landscape" --aspect-ratio 16:9
+```
+
+**Key Features:**
+
+- Uses Google Gemini's "Nano Banana" image generation (`gemini-2.5-flash-image`)
+- Supports multiple aspect ratios
+- Reads API key from `GOOGLE_API_KEY` or `NANOBANANA_GEMINI_API_KEY`
+- Saves as PNG with customizable output path
+
 ## images2pdf.py
 
 Convert JPEG/JPG images to PDF with 4 images per page arranged in a 2x2 grid, with filename captions. Useful if you need to present photos at VCAT 🤦‍♂️
@@ -89,3 +117,4 @@ uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/mfield
 - Table or JSON output formats
 - Support for environment variables
 - Analysis of single collection or entire database
+
