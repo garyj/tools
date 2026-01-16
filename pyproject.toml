@@ -5,9 +5,12 @@ description = "Various tools and utilities"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "checkdmarc>=5.0.0",
     "click",
+    "dnspython>=2.4.0",
     "google-genai>=1.0.0",
     "pillow",
+    "pydnsbl>=1.0.0",
     "pymongo",
     "python-dotenv",
     "reportlab",

@@ -2,6 +2,45 @@
 
 These scripts can be run on their own or using `uv run`. Scripts should use inline metadata [PEP 723](https://peps.python.org/pep-0723/)
 
+## emailcheck.py
+
+Email domain configuration checker that validates DNS records and server configuration for email deliverability. Checks MX, SPF, DKIM, DMARC, PTR, MTA-STS, TLS-RPT, BIMI, STARTTLS support, and blacklist status.
+
+```bash
+# Basic usage - check a domain
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/emailcheck.py example.com
+
+# Check from email address (extracts domain)
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/emailcheck.py user@example.com
+
+# Check from URL (extracts domain)
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/emailcheck.py https://example.com
+
+# DNS-only checks (skip STARTTLS and blacklist network checks)
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/emailcheck.py --no-network example.com
+
+# JSON output for scripting
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/emailcheck.py --json example.com
+
+# Custom DKIM selectors
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/emailcheck.py -s customselector example.com
+```
+
+**Key Features:**
+
+- Validates MX records (existence, resolution, priority)
+- SPF validation with DNS lookup count
+- DKIM record checks for common selectors (google, selector1, selector2, default, etc.)
+- DMARC policy validation (none/quarantine/reject)
+- PTR/reverse DNS with FCrDNS verification
+- MTA-STS policy fetch and validation
+- TLS-RPT record check
+- BIMI record check
+- STARTTLS support and TLS version on mail servers
+- Blacklist/DNSBL checking for MX IPs
+- Supports domain, email address, or URL input
+- Table or JSON output formats
+
 ## genimg.py
 
 Generate images from text prompts using Google Gemini's image generation model.
@@ -117,4 +156,3 @@ uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/mfield
 - Table or JSON output formats
 - Support for environment variables
 - Analysis of single collection or entire database
-
