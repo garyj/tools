@@ -122,6 +122,33 @@ echo "email body" | uv run https://raw.githubusercontent.com/garyj/tools/refs/he
     -pw PASSWORD
 ```
 
+## tgcleanup.py
+
+Bulk unsubscribe from Telegram channels and supergroups. Presents an interactive checkbox list so you can select multiple channels to leave at once.
+
+Requires a Telegram API ID and hash from https://my.telegram.org/apps (one-time setup).
+
+```bash
+# Set your API credentials (or pass as --api-id / --api-hash)
+export TELEGRAM_API_ID="12345"
+export TELEGRAM_API_HASH="abcdef1234567890"
+
+# Interactive channel cleanup
+uv run py/tgcleanup.py
+
+# Dry run — see what you'd leave without actually leaving
+uv run py/tgcleanup.py --dry-run
+```
+
+**Key Features:**
+
+- Lists all subscribed channels/supergroups (excludes ones you created)
+- Interactive checkbox selection (space to toggle, enter to confirm)
+- Shows member count for each channel
+- Confirmation prompt before leaving
+- Dry-run mode for safe preview
+- Session persisted so you only authenticate once
+
 ## mfields.py
 
 MongoDB field analysis tool that scans collections for top-level field coverage statistics. Helps understand schema patterns and field usage across documents.
