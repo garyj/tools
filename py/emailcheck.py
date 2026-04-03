@@ -92,6 +92,48 @@ DNSBL_LIST = [
     "dnsbl.sorbs.net",
 ]
 
+# DNS Provider patterns (from NS records)
+DNS_PROVIDERS = {
+    "cloudflare": "Cloudflare",
+    "awsdns": "Amazon Route 53",
+    "google": "Google Cloud DNS",
+    "domaincontrol": "GoDaddy",
+    "registrar-servers": "Namecheap",
+    "azure-dns": "Azure DNS",
+    "digitalocean": "DigitalOcean",
+    "linode": "Linode",
+    "vultr": "Vultr",
+    "hetzner": "Hetzner",
+    "ovh": "OVH",
+    "dnsimple": "DNSimple",
+    "ns1": "NS1",
+    "ultradns": "Neustar UltraDNS",
+}
+
+# Email Provider patterns (from MX records)
+EMAIL_PROVIDERS = {
+    "outlook": "Microsoft 365",
+    "protection.outlook": "Microsoft 365",
+    "google": "Google Workspace",
+    "googlemail": "Google Workspace",
+    "aspmx": "Google Workspace",
+    "zoho": "Zoho Mail",
+    "protonmail": "ProtonMail",
+    "mimecast": "Mimecast",
+    "barracuda": "Barracuda",
+    "pphosted": "Proofpoint",
+    "mailgun": "Mailgun",
+    "sendgrid": "SendGrid",
+    "amazonses": "Amazon SES",
+    "mailchimp": "Mailchimp/Mandrill",
+    "mandrillapp": "Mailchimp/Mandrill",
+    "postmarkapp": "Postmark",
+    "sparkpost": "SparkPost",
+    "messagelabs": "Symantec Email Security",
+    "mxlogic": "McAfee Email Security",
+    "ppe-hosted": "Cisco Email Security",
+}
+
 
 def extract_domain(input_str: str) -> str:
     """Extract domain from email address, URL, or plain domain."""
@@ -189,6 +231,95 @@ def check_mx(domain: str) -> CheckResult:
         return CheckResult("MX Records", Status.ERROR, f"Error: {e}")
 
 
+def check_common_records(domain: str) -> CheckResult:
+    """Check common infrastructure records and identify providers."""
+    sub_results = []
+    dns_provider = None
+    email_provider = None
+
+    # Check NS records for DNS provider
+    try:
+        ns_answers = dns.resolver.resolve(domain, 'NS')
+        ns_hosts = [str(r).rstrip('.').lower() for r in ns_answers]
+
+        for ns in ns_hosts:
+            for pattern, provider in DNS_PROVIDERS.items():
+                if pattern in ns:
+                    dns_provider = provider
+                    break
+            if dns_provider:
+                break
+
+        if dns_provider:
+            sub_results.append(CheckResult(
+                "  DNS Provider",
+                Status.INFO,
+                dns_provider
+            ))
+    except Exception:
+        pass
+
+    # Check MX records for email provider
+    try:
+        mx_answers = dns.resolver.resolve(domain, 'MX')
+        mx_hosts = [str(r.exchange).rstrip('.').lower() for r in mx_answers]
+
+        for mx in mx_hosts:
+            for pattern, provider in EMAIL_PROVIDERS.items():
+                if pattern in mx:
+                    email_provider = provider
+                    break
+            if email_provider:
+                break
+
+        if email_provider:
+            sub_results.append(CheckResult(
+                "  Email Provider",
+                Status.INFO,
+                email_provider
+            ))
+    except Exception:
+        pass
+
+    # Check A record for website
+    try:
+        a_answers = dns.resolver.resolve(domain, 'A')
+        if a_answers:
+            sub_results.append(CheckResult(
+                "  Website (A)",
+                Status.PASS,
+                "Present"
+            ))
+    except dns.resolver.NXDOMAIN:
+        sub_results.append(CheckResult(
+            "  Website (A)",
+            Status.INFO,
+            "Not present"
+        ))
+    except dns.resolver.NoAnswer:
+        sub_results.append(CheckResult(
+            "  Website (A)",
+            Status.INFO,
+            "No A record"
+        ))
+    except Exception:
+        pass
+
+    if not sub_results:
+        return CheckResult("Common Records", Status.INFO, "No infrastructure identified")
+
+    identified = []
+    if dns_provider:
+        identified.append(f"DNS: {dns_provider}")
+    if email_provider:
+        identified.append(f"Email: {email_provider}")
+
+    if identified:
+        return CheckResult("Common Records", Status.PASS, "Infrastructure identified", sub_results)
+    else:
+        return CheckResult("Common Records", Status.INFO, "Records present", sub_results)
+
+
 def check_spf(domain: str) -> CheckResult:
     """Check SPF record for domain using checkdmarc."""
     try:
@@ -211,25 +342,82 @@ def check_spf(domain: str) -> CheckResult:
             errors = spf_data.get('error', 'Invalid syntax')
             return CheckResult("SPF Record", Status.FAIL, f"Invalid: {errors}")
 
-        # Check DNS lookup count
+        sub_results = []
+
+        # Parse and explain the "all" mechanism
+        all_mechanisms = {
+            '-all': (Status.PASS, "Hard fail - unauthorized senders rejected"),
+            '~all': (Status.WARN, "Soft fail - unauthorized treated as suspicious"),
+            '?all': (Status.WARN, "Neutral - no policy on unauthorized senders"),
+            '+all': (Status.FAIL, "Pass all - dangerous, allows any sender"),
+        }
+
+        all_match = re.search(r'([+\-~?]all)\s*$', record)
+        if all_match:
+            all_mech = all_match.group(1)
+            if all_mech in all_mechanisms:
+                status, explanation = all_mechanisms[all_mech]
+                sub_results.append(CheckResult(
+                    "  All Mechanism",
+                    status,
+                    f"{all_mech}: {explanation}"
+                ))
+
+        # Add DNS lookup info
+        if dns_lookups >= 8:
+            sub_results.append(CheckResult(
+                "  DNS Lookups",
+                Status.WARN,
+                f"{dns_lookups}/10 (approaching limit)"
+            ))
+        else:
+            sub_results.append(CheckResult(
+                "  DNS Lookups",
+                Status.PASS,
+                f"{dns_lookups}/10"
+            ))
+
+        # Determine overall status
         if dns_lookups > 10:
             return CheckResult(
                 "SPF Record",
                 Status.FAIL,
-                f"Too many DNS lookups: {dns_lookups}/10"
+                f"Too many DNS lookups: {dns_lookups}/10",
+                sub_results
             )
-        elif dns_lookups >= 8:
+
+        # Check for dangerous +all
+        if '+all' in record:
+            return CheckResult(
+                "SPF Record",
+                Status.FAIL,
+                "Dangerous: +all allows any sender",
+                sub_results
+            )
+
+        # Check for weak policies
+        if '?all' in record:
             return CheckResult(
                 "SPF Record",
                 Status.WARN,
-                f"Valid, {dns_lookups}/10 DNS lookups (approaching limit)"
+                f"Valid but weak (?all), {dns_lookups}/10 lookups",
+                sub_results
             )
-        else:
+
+        if '~all' in record:
             return CheckResult(
                 "SPF Record",
-                Status.PASS,
-                f"Valid, {dns_lookups}/10 DNS lookups"
+                Status.WARN if dns_lookups >= 8 else Status.PASS,
+                f"Valid (~all), {dns_lookups}/10 lookups",
+                sub_results
             )
+
+        return CheckResult(
+            "SPF Record",
+            Status.PASS if dns_lookups < 8 else Status.WARN,
+            f"Valid, {dns_lookups}/10 DNS lookups",
+            sub_results
+        )
 
     except Exception as e:
         return CheckResult("SPF Record", Status.ERROR, f"Error: {e}")
@@ -332,30 +520,95 @@ def check_dmarc(domain: str) -> CheckResult:
             errors = dmarc_data.get('error', 'Invalid syntax')
             return CheckResult("DMARC Record", Status.FAIL, f"Invalid: {errors}")
 
-        # Parse policy
-        parsed = dmarc_data.get('tags', {}) or dmarc_data.get('parsed', {})
-        policy = None
+        sub_results = []
 
-        # Try different ways to get the policy
-        if isinstance(parsed, dict):
-            policy = parsed.get('p', {})
-            if isinstance(policy, dict):
-                policy = policy.get('value')
+        # Parse all DMARC tags from the record
+        # Policy (p=)
+        p_match = re.search(r'p=(none|quarantine|reject)', record, re.IGNORECASE)
+        policy = p_match.group(1).lower() if p_match else 'none'
 
-        # Fallback: parse from record
-        if not policy:
-            p_match = re.search(r'p=(none|quarantine|reject)', record, re.IGNORECASE)
-            if p_match:
-                policy = p_match.group(1).lower()
+        policy_details = {
+            'reject': (Status.PASS, "p=reject (unauthorized emails rejected)"),
+            'quarantine': (Status.PASS, "p=quarantine (unauthorized emails quarantined)"),
+            'none': (Status.WARN, "p=none (monitoring only, no enforcement)"),
+        }
+        p_status, p_detail = policy_details.get(policy, (Status.WARN, f"p={policy}"))
+        sub_results.append(CheckResult("  Policy", p_status, p_detail))
 
-        if policy == 'reject':
-            return CheckResult("DMARC Record", Status.PASS, "p=reject (strongest)")
-        elif policy == 'quarantine':
-            return CheckResult("DMARC Record", Status.PASS, "p=quarantine")
-        elif policy == 'none':
-            return CheckResult("DMARC Record", Status.WARN, "p=none (monitoring only)")
+        # Percentage (pct=)
+        pct_match = re.search(r'pct=(\d+)', record)
+        pct = int(pct_match.group(1)) if pct_match else 100
+        if pct == 100:
+            sub_results.append(CheckResult("  Percentage", Status.PASS, f"pct={pct} (all emails)"))
+        elif pct >= 50:
+            sub_results.append(CheckResult("  Percentage", Status.WARN, f"pct={pct} (gradual rollout)"))
         else:
-            return CheckResult("DMARC Record", Status.WARN, f"Policy: {policy or 'unknown'}")
+            sub_results.append(CheckResult("  Percentage", Status.WARN, f"pct={pct} (low coverage)"))
+
+        # Aggregate Reports (rua=)
+        rua_match = re.search(r'rua=([^;]+)', record)
+        if rua_match:
+            rua = rua_match.group(1).strip()
+            # Check if it's self-only (only the domain's own address)
+            rua_addresses = re.findall(r'mailto:([^,;\s]+)', rua)
+            if rua_addresses:
+                self_only = all(addr.endswith(f'@{domain}') for addr in rua_addresses)
+                if self_only and len(rua_addresses) == 1:
+                    sub_results.append(CheckResult(
+                        "  Aggregate Reports",
+                        Status.WARN,
+                        f"rua={rua_addresses[0]} (self-only)"
+                    ))
+                else:
+                    # Truncate if too long
+                    rua_display = ', '.join(rua_addresses[:2])
+                    if len(rua_addresses) > 2:
+                        rua_display += f" (+{len(rua_addresses)-2} more)"
+                    sub_results.append(CheckResult(
+                        "  Aggregate Reports",
+                        Status.PASS,
+                        f"rua configured: {rua_display}"
+                    ))
+            else:
+                sub_results.append(CheckResult("  Aggregate Reports", Status.PASS, "rua configured"))
+        else:
+            sub_results.append(CheckResult(
+                "  Aggregate Reports",
+                Status.WARN,
+                "rua not configured (no visibility into failures)"
+            ))
+
+        # Failure Reports (ruf=)
+        ruf_match = re.search(r'ruf=([^;]+)', record)
+        if ruf_match:
+            ruf = ruf_match.group(1).strip()
+            ruf_addresses = re.findall(r'mailto:([^,;\s]+)', ruf)
+            if ruf_addresses:
+                sub_results.append(CheckResult(
+                    "  Failure Reports",
+                    Status.INFO,
+                    f"ruf configured: {ruf_addresses[0]}"
+                ))
+            else:
+                sub_results.append(CheckResult("  Failure Reports", Status.INFO, "ruf configured"))
+        else:
+            sub_results.append(CheckResult(
+                "  Failure Reports",
+                Status.INFO,
+                "ruf not configured (optional)"
+            ))
+
+        # Determine overall status based on policy and pct
+        if policy == 'reject' and pct == 100:
+            return CheckResult("DMARC Record", Status.PASS, "p=reject, pct=100 (strongest)", sub_results)
+        elif policy == 'reject':
+            return CheckResult("DMARC Record", Status.PASS, f"p=reject, pct={pct}", sub_results)
+        elif policy == 'quarantine':
+            return CheckResult("DMARC Record", Status.PASS, f"p=quarantine, pct={pct}", sub_results)
+        elif policy == 'none':
+            return CheckResult("DMARC Record", Status.WARN, "p=none (monitoring only)", sub_results)
+        else:
+            return CheckResult("DMARC Record", Status.WARN, f"Policy: {policy or 'unknown'}", sub_results)
 
     except Exception as e:
         return CheckResult("DMARC Record", Status.ERROR, f"Error: {e}")
@@ -520,7 +773,7 @@ def check_tls_rpt(domain: str) -> CheckResult:
 
 
 def check_bimi(domain: str) -> CheckResult:
-    """Check BIMI DNS record."""
+    """Check BIMI DNS record with logo and VMC details."""
     bimi_domain = f"default._bimi.{domain}"
     try:
         answers = dns.resolver.resolve(bimi_domain, 'TXT')
@@ -528,19 +781,61 @@ def check_bimi(domain: str) -> CheckResult:
 
         for txt in txt_records:
             if txt.startswith('v=BIMI1'):
-                # Extract logo and authority
-                logo_match = re.search(r'l=([^;]+)', txt)
-                auth_match = re.search(r'a=([^;]+)', txt)
+                sub_results = []
 
+                # Extract logo URL (l=)
+                logo_match = re.search(r'l=([^;]+)', txt)
                 logo = logo_match.group(1).strip() if logo_match else None
+
+                # Extract authority/VMC URL (a=)
+                auth_match = re.search(r'a=([^;]+)', txt)
                 auth = auth_match.group(1).strip() if auth_match else None
 
-                if logo and auth:
-                    return CheckResult("BIMI", Status.INFO, "Logo + VMC configured")
-                elif logo:
-                    return CheckResult("BIMI", Status.INFO, "Logo configured (no VMC)")
+                # Logo sub-result
+                if logo:
+                    # Truncate long URLs for display
+                    logo_display = logo[:50] + '...' if len(logo) > 50 else logo
+                    if logo.endswith('.svg') or 'svg' in logo.lower():
+                        sub_results.append(CheckResult(
+                            "  Logo",
+                            Status.PASS,
+                            f"SVG: {logo_display}"
+                        ))
+                    else:
+                        sub_results.append(CheckResult(
+                            "  Logo",
+                            Status.WARN,
+                            f"URL: {logo_display} (should be SVG)"
+                        ))
                 else:
-                    return CheckResult("BIMI", Status.INFO, "Record exists")
+                    sub_results.append(CheckResult(
+                        "  Logo",
+                        Status.WARN,
+                        "No logo URL specified"
+                    ))
+
+                # VMC sub-result
+                if auth:
+                    auth_display = auth[:50] + '...' if len(auth) > 50 else auth
+                    sub_results.append(CheckResult(
+                        "  VMC Certificate",
+                        Status.PASS,
+                        f"Present: {auth_display}"
+                    ))
+                else:
+                    sub_results.append(CheckResult(
+                        "  VMC Certificate",
+                        Status.INFO,
+                        "Not configured (optional, enhances trust)"
+                    ))
+
+                # Determine overall status
+                if logo and auth:
+                    return CheckResult("BIMI", Status.PASS, "Logo + VMC configured", sub_results)
+                elif logo:
+                    return CheckResult("BIMI", Status.INFO, "Logo configured (no VMC)", sub_results)
+                else:
+                    return CheckResult("BIMI", Status.WARN, "Record exists but no logo", sub_results)
 
         return CheckResult("BIMI", Status.INFO, "Not configured")
 
@@ -707,6 +1002,87 @@ def check_blacklists(domain: str) -> CheckResult:
     return CheckResult("Blacklists", status, details, sub_results)
 
 
+# Scoring System Constants
+SCORING_CONFIG = {
+    "impersonation": {
+        "max": 50,
+        "checks": {
+            "DMARC Record": 20,
+            "SPF Record": 15,
+            "DKIM Records": 15,
+        }
+    },
+    "privacy": {
+        "max": 25,
+        "checks": {
+            "MTA-STS": 10,
+            "TLS-RPT": 5,
+            "STARTTLS": 10,
+        }
+    },
+    "deliverability": {
+        "max": 25,
+        "checks": {
+            "MX Records": 10,
+            "PTR Records": 10,
+            "Blacklists": 5,
+        }
+    },
+}
+
+
+def get_risk_level(score: int) -> str:
+    """Get risk level based on overall score."""
+    if score >= 80:
+        return "Low Risk"
+    elif score >= 60:
+        return "Moderate Risk"
+    else:
+        return "High Risk"
+
+
+def calculate_scores(results: list[CheckResult]) -> dict:
+    """Calculate category and overall scores from check results.
+
+    Scoring: PASS = full points, WARN = half points, FAIL/ERROR = 0, INFO = neutral
+    """
+    # Build lookup of results by name
+    result_map = {r.name.strip(): r for r in results}
+
+    category_scores = {}
+
+    for category, config in SCORING_CONFIG.items():
+        category_score = 0
+        category_max = config["max"]
+        checks_found = []
+
+        for check_name, points in config["checks"].items():
+            result = result_map.get(check_name)
+            if result:
+                checks_found.append(check_name)
+                if result.status == Status.PASS:
+                    category_score += points
+                elif result.status == Status.WARN:
+                    category_score += points // 2
+                # FAIL, ERROR = 0 points
+                # INFO is neutral, we still count it as 0
+
+        category_scores[category] = {
+            "score": category_score,
+            "max": category_max,
+            "checks": checks_found,
+        }
+
+    overall = sum(cat["score"] for cat in category_scores.values())
+
+    return {
+        "overall": overall,
+        "max": 100,
+        "risk_level": get_risk_level(overall),
+        "categories": category_scores,
+    }
+
+
 def format_status(status: Status, no_color: bool = False) -> str:
     """Format status with color."""
     if no_color:
@@ -723,14 +1099,48 @@ def format_status(status: Status, no_color: bool = False) -> str:
 
 
 def format_results_table(results: list[CheckResult], domain: str, no_color: bool = False) -> str:
-    """Format results as a table."""
+    """Format results as a table with scoring."""
     lines = []
 
-    # Header
-    header = f"Email Configuration Report: {domain}"
-    lines.append(header)
-    lines.append("=" * len(header))
+    # Calculate scores
+    scores = calculate_scores(results)
+
+    # Header with overall score
+    lines.append("═" * 55)
+    lines.append(f"Email Configuration Report: {domain}")
+    lines.append("═" * 55)
     lines.append("")
+
+    # Overall Score
+    score_str = f"{scores['overall']}/{scores['max']}"
+    risk_level = scores['risk_level']
+
+    # Color the risk level
+    risk_colors = {
+        'Low Risk': 'green',
+        'Moderate Risk': 'yellow',
+        'High Risk': 'red',
+    }
+    risk_color = risk_colors.get(risk_level, 'white') if not no_color else None
+    risk_styled = click.style(risk_level, fg=risk_color, bold=True) if risk_color else risk_level
+
+    lines.append(f"Overall Score: {score_str} - {risk_styled}")
+    lines.append("")
+
+    # Category Scores
+    lines.append("Category Scores:")
+    category_display = {
+        'impersonation': 'Impersonation',
+        'privacy': 'Privacy',
+        'deliverability': 'Deliverability',
+    }
+    for cat_key, cat_data in scores['categories'].items():
+        cat_name = category_display.get(cat_key, cat_key.title())
+        checks_str = ', '.join(cat_data['checks'])
+        lines.append(f"  {cat_name:15} {cat_data['score']:2}/{cat_data['max']} ({checks_str})")
+
+    lines.append("")
+    lines.append("─" * 55)
 
     # Build table data
     table_data = []
@@ -746,6 +1156,7 @@ def format_results_table(results: list[CheckResult], domain: str, no_color: bool
 
     # Summary
     lines.append("")
+    lines.append("─" * 55)
     passed = sum(1 for r in results if r.status == Status.PASS)
     warned = sum(1 for r in results if r.status == Status.WARN)
     failed = sum(1 for r in results if r.status == Status.FAIL)
@@ -767,7 +1178,7 @@ def format_results_table(results: list[CheckResult], domain: str, no_color: bool
 
 
 def format_results_json(results: list[CheckResult], domain: str) -> str:
-    """Format results as JSON."""
+    """Format results as JSON with scoring."""
     def result_to_dict(r: CheckResult) -> dict:
         d = {
             'name': r.name.strip(),
@@ -778,8 +1189,23 @@ def format_results_json(results: list[CheckResult], domain: str) -> str:
             d['sub_results'] = [result_to_dict(sub) for sub in r.sub_results]
         return d
 
+    # Calculate scores
+    scores = calculate_scores(results)
+
     output = {
         'domain': domain,
+        'score': {
+            'overall': scores['overall'],
+            'max': scores['max'],
+            'risk_level': scores['risk_level'],
+            'categories': {
+                cat: {
+                    'score': data['score'],
+                    'max': data['max'],
+                }
+                for cat, data in scores['categories'].items()
+            }
+        },
         'results': [result_to_dict(r) for r in results],
         'summary': {
             'passed': sum(1 for r in results if r.status == Status.PASS),
@@ -845,6 +1271,9 @@ def main(domain: str, dkim_selectors: tuple, timeout: int, no_network: bool,
             selectors.insert(0, s)
 
     results = []
+
+    # Infrastructure identification
+    results.append(check_common_records(domain))
 
     # DNS checks (always run)
     results.append(check_mx(domain))
