@@ -122,6 +122,13 @@ echo "email body" | uv run https://raw.githubusercontent.com/garyj/tools/refs/he
     -pw PASSWORD
 ```
 
+**Key Features:**
+
+- Reads email body from stdin (pipe-friendly)
+- Supports SSL and TLS connections
+- Optional SMTP authentication
+- Configurable port, subject, from/to addresses
+
 ## mfields.py
 
 MongoDB field analysis tool that scans collections for top-level field coverage statistics. Helps understand schema patterns and field usage across documents.
@@ -157,6 +164,35 @@ uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/mfield
 - Support for environment variables
 - Analysis of single collection or entire database
 
+## speedtest.py
+
+Run internet speed tests (download and upload) using Cloudflare's speed test endpoints. No external binaries needed — just `uv` on the machine.
+
+```bash
+# Full test (latency + download + upload)
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/speedtest.py
+
+# Download only
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/speedtest.py --download-only
+
+# Upload only
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/speedtest.py --upload-only
+
+# JSON output for scripting
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/speedtest.py --json
+
+# Custom test sizes (useful on metered connections)
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/speedtest.py --size 10 --upload-size 5
+```
+
+**Key Features:**
+
+- Tests against Cloudflare's globally distributed CDN (auto-routes to nearest edge)
+- Measures latency, download speed, and upload speed
+- Configurable test payload sizes (`--size`, `--upload-size`)
+- JSON output for scripting/automation
+- Only depends on `requests` — no archived or unmaintained packages
+
 ## tgchats.py
 
 Clean up empty and dead Telegram chats — deleted accounts, empty conversations, and contacts you never messaged.
@@ -166,14 +202,21 @@ export TELEGRAM_API_ID="12345"
 export TELEGRAM_API_HASH="your_hash"
 
 # Preview what it finds
-uv run py/tgchats.py --dry-run
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/tgchats.py --dry-run
 
 # Auto-delete only empty chats and deleted accounts
-uv run py/tgchats.py --empty-only
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/tgchats.py --empty-only
 
 # Interactive mode — also pick from remaining chats to delete
-uv run py/tgchats.py
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/tgchats.py
 ```
+
+**Key Features:**
+
+- Detects deleted accounts, empty conversations, and never-messaged contacts
+- Dry-run mode for safe preview
+- Auto-delete mode for empty chats only
+- Interactive selection for remaining chats
 
 ## tgcleanup.py
 
@@ -187,10 +230,10 @@ export TELEGRAM_API_ID="12345"
 export TELEGRAM_API_HASH="abcdef1234567890"
 
 # Interactive channel cleanup
-uv run py/tgcleanup.py
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/tgcleanup.py
 
 # Dry run — see what you'd leave without actually leaving
-uv run py/tgcleanup.py --dry-run
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/tgcleanup.py --dry-run
 ```
 
 **Key Features:**
@@ -211,8 +254,15 @@ export TELEGRAM_API_ID="12345"
 export TELEGRAM_API_HASH="your_hash"
 
 # Preview what would be deleted
-uv run py/tgpurge.py --dry-run
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/tgpurge.py --dry-run
 
 # Delete them
-uv run py/tgpurge.py
+uv run https://raw.githubusercontent.com/garyj/tools/refs/heads/master/py/tgpurge.py
 ```
+
+**Key Features:**
+
+- Scans only user chats (skips groups/channels)
+- Detects "X joined Telegram" service messages
+- Dry-run mode for safe preview
+- Session persisted so you only authenticate once
